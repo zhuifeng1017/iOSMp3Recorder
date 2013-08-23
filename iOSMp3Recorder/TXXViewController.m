@@ -9,6 +9,9 @@
 #import "TXXViewController.h"
 #import <AudioToolbox/AudioToolbox.h>
 
+
+#define kChannelNum (1)
+
 @interface TXXViewController ()
 
 @end
@@ -126,29 +129,40 @@
     mp3FileName = [mp3FileName stringByAppendingString:@".mp3"];
     NSString *mp3FilePath = [[NSHomeDirectory() stringByAppendingFormat:@"/Documents/"] stringByAppendingPathComponent:mp3FileName];
     
+    
     @try {
         int read, write;
         
         FILE *pcm = fopen([cafFilePath cStringUsingEncoding:1], "rb");  //source
-        fseek(pcm, 4*1024, SEEK_CUR);                                   //skip file header
+        //fseek(pcm, 4*1024, SEEK_CUR);                                   //skip file header
+        fseek(pcm, 4096, SEEK_CUR);
         FILE *mp3 = fopen([mp3FilePath cStringUsingEncoding:1], "wb");  //output
         
         const int PCM_SIZE = 8192;
         const int MP3_SIZE = 8192;
-        short int pcm_buffer[PCM_SIZE*2];
+        short int pcm_buffer[PCM_SIZE*kChannelNum];
         unsigned char mp3_buffer[MP3_SIZE];
         
         lame_t lame = lame_init();
+        lame_set_num_channels(lame,kChannelNum);  
         lame_set_in_samplerate(lame, _sampleRate);
+//        lame_set_brate(lame,8);
+//        lame_set_mode(lame,3);
+//        lame_set_quality(lame,2); /* 2=high 5 = medium 7=low */        
         lame_set_VBR(lame, vbr_default);
         lame_init_params(lame);
         
         do {
-            read = fread(pcm_buffer, 2*sizeof(short int), PCM_SIZE, pcm);
-            if (read == 0)
+            read = fread(pcm_buffer, kChannelNum*sizeof(short int), PCM_SIZE, pcm);
+            if (read == 0){
                 write = lame_encode_flush(lame, mp3_buffer, MP3_SIZE);
-            else
-                write = lame_encode_buffer_interleaved(lame, pcm_buffer, read, mp3_buffer, MP3_SIZE);
+            }else{
+                if (kChannelNum == 1) {
+                    write = lame_encode_buffer(lame,pcm_buffer, NULL,read,mp3_buffer,MP3_SIZE);
+                }else{
+                    write = lame_encode_buffer_interleaved(lame, pcm_buffer, read, mp3_buffer, MP3_SIZE);
+                }
+            }
             
             fwrite(mp3_buffer, write, 1, mp3);
             
@@ -202,8 +216,11 @@
         NSDictionary *settings = [NSDictionary dictionaryWithObjectsAndKeys:
                                   [NSNumber numberWithFloat: _sampleRate],                  AVSampleRateKey,
                                   [NSNumber numberWithInt: _formatIndex],                   AVFormatIDKey,
-                                  [NSNumber numberWithInt: 2],                              AVNumberOfChannelsKey,
+                                  [NSNumber numberWithInt: kChannelNum],                              AVNumberOfChannelsKey,  // 单通道，or 双通道
                                   [NSNumber numberWithInt: _quality],                       AVEncoderAudioQualityKey,
+                                  [NSNumber numberWithInt:16],AVLinearPCMBitDepthKey,
+                                  [NSNumber numberWithBool:NO],AVLinearPCMIsBigEndianKey,
+                                  [NSNumber numberWithBool:NO],AVLinearPCMIsFloatKey,
                                   nil];
         
         _recordedFile = [[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingString:@"RecordedFile"]]retain];
